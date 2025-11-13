@@ -16,6 +16,9 @@
  * ui.addChatMessage('K', 'As always, at 25:00.');
  */
 class UIManager {
+  static MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+  static TWELVE_HOURS_MS = UIManager.MILLISECONDS_PER_DAY / 2;
+
   /**
    * 创建 UI 管理器实例
    * @param {EventBus} eventBus - 事件总线实例
@@ -106,7 +109,7 @@ class UIManager {
           user: name,
           avatar,
           color,
-          time: timestamp ? new Date(timestamp).toLocaleTimeString() : '',
+          time: timestamp ? this.formatDate(timestamp) : '',
           text,
           timestamp
         };
@@ -275,7 +278,7 @@ class UIManager {
         user: name,
         avatar: avatar ?? userAvatar,
         color: color ?? userColor,
-        time: timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+        time: timestamp ? this.formatDate(timestamp) : new Date().toLocaleTimeString(),
         text: message,
         timestamp: timestamp || Date.now()
       });
@@ -292,7 +295,7 @@ class UIManager {
       user: name,
       avatar: avatar ?? userAvatar,
       color: color ?? userColor,
-      time: timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+      time: timestamp ? this.formatDate(timestamp) : new Date().toLocaleTimeString(),
       text: message,
       timestamp: msgObj.timestamp
     });
@@ -390,5 +393,76 @@ class UIManager {
    */
   getElements() {
     return this.elements;
+  }
+
+  /**
+   * Format a timestamp into a human-readable string with special handling for a "30-hour" night-shift display.
+   *
+   * Behavior summary:
+   * - If `timestamp` is falsy, returns an empty string.
+   * - Final returned formats:
+   *   - Same day (diffDays === 0): "HH:MM:SS" (plus the 30-hour parenthetical if applicable)
+   *   - Yesterday (diffDays === 1): "昨天 HH:MM:SS"
+   *   - Within the last week but not yesterday (1 < diffDays < 7): "周X HH:MM:SS" where 周X is one of ["周日","周一",...,"周六"]
+   *   - Older than a week (diffDays >= 7): "M月D日 HH:MM:SS"
+   *
+   * Notes:
+   * - This function depends on UIManager.MILLISECONDS_PER_DAY to calculate full-day differences and UIManager.TWELVE_HOURS_MS (12 hours) to compute the 30-hour adjustment.
+   * - The "30-hour" clock is a display convention: times from 00:00 to 05:59 are treated as belonging to the previous night's extended shift.
+   *
+   * @param {number|string|Date|null|undefined} timestamp - Value accepted by `new Date(timestamp)`. If falsy, the function returns an empty string.
+   * @returns {string} A formatted, localized time string with contextual day label and optional 30-hour parenthetical.
+   *
+   * @example
+   * // Same day
+   * formatDate(Date.now()) // => "14:23:05"
+   *
+   * @example
+   * // Early morning treated as previous night (30-hour clock shown in parentheses)
+   * formatDate(new Date("2025-11-13T01:05:00").getTime()) // => "01:05:00（昨天 25:05:00）"
+   *
+   * @example
+   * // Yesterday
+   * formatDate(* timestamp from yesterday *) // => "昨天 23:15:10"
+   *
+   * @example
+   * // Within last week
+   * formatDate(* timestamp from last Wednesday *) // => "周三 09:00:00"
+   *
+   * @example
+   * // Older than a week
+   * formatDate(* timestamp from months ago *) // => "11月5日 07:30:00"
+   */
+  formatDate(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    let timeString = date.toLocaleTimeString();
+
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((startToday - startDate) / UIManager.MILLISECONDS_PER_DAY);
+
+    let adjustedTimeString = '';
+
+    // For messages sent before 6 AM, display them as belonging to the previous night.
+    // According to 30-hour clock system.
+    if (date.getHours() < 6) {
+      const adjustedDate = new Date(date.getTime() - UIManager.TWELVE_HOURS_MS);
+      adjustedTimeString = this.formatDate(adjustedDate.getTime()).replace(/(\d{1,2}):(\d{2}):(\d{2})/, (match, p1, p2, p3) => {
+        return `${parseInt(p1) + 12}:${p2}:${p3}`;
+      });
+      adjustedTimeString = `（${adjustedTimeString}）`;
+    }
+
+    timeString += adjustedTimeString;
+
+    if (diffDays === 0) return timeString;
+    if (diffDays === 1) return `昨天 ${timeString}`;
+    if (diffDays > 1 && diffDays < 7) {
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return `${weekdays[date.getDay()]} ${timeString}`;
+    }
+    return `${date.getMonth() + 1}月${date.getDate()}日 ${timeString}`;
   }
 }
