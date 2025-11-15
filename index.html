@@ -148,12 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <script src="nightcord.js"></script>
   <script>
     let nightcord = new Nightcord();
-    const params = new URLSearchParams(location.search);
-    if (params.has('test')) {
-      nightcord.init('nightcord-test');
-    } else {
-      nightcord.init();
-    }
+    nightcord.init();
   </script>
   <script src="pangu.js"></script>
 </body>
