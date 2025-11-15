@@ -52,7 +52,6 @@ class EventBus {
    * @param {*} data - 传递给监听器的数据
    */
   emit(event, data) {
-    console.log(`EventBus: Emitting event '${event}' with data:`, data);
     if (!this.listeners[event]) return;
     this.listeners[event].forEach(callback => callback(data));
   }
