@@ -144,11 +144,17 @@ document.addEventListener('DOMContentLoaded', () => {
   <script src="event-bus.js"></script>
   <script src="websocket-mgr.js"></script>
   <script src="nightcord-mgr.js"></script>
+  <script src="storage-manager.js"></script>
   <script src="ui-manager.js"></script>
   <script src="nightcord.js"></script>
   <script>
     let nightcord = new Nightcord();
-    nightcord.init();
+    const params = new URLSearchParams(location.search);
+    if (params.has('test')) {
+      nightcord.init('nightcord-test');
+    } else {
+      nightcord.init();
+    }
   </script>
   <script src="pangu.js"></script>
 </body>
