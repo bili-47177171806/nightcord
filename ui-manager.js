@@ -20,12 +20,34 @@ class UIManager {
   static TWELVE_HOURS_MS = UIManager.MILLISECONDS_PER_DAY / 2;
 
   /**
+   * 简单节流函数，确保处理器每 wait 毫秒最多执行一次
+   * @param {Function} fn 
+   * @param {number} wait 
+   * @returns {Function}
+   */
+  static throttle(fn, wait) {
+    let lastTime = 0;
+    return function(...args) {
+      const now = Date.now();
+      if (now - lastTime >= wait) {
+        lastTime = now;
+        fn.apply(this, args);
+      }
+    };
+  }
+
+  /**
    * 创建 UI 管理器实例
    * @param {EventBus} eventBus - 事件总线实例
    */
   constructor(eventBus) {
     this.eventBus = eventBus;
     this.isAtBottom = true;
+
+    // 触摸和滚动检测
+    this.lastUserActivityTime = Date.now(); // 最后一次用户活动时间（触摸、滚轮、滚动等），初始化为当前时间
+    this.scrollThreshold = 150; // 距离底部超过此像素数认为在阅读历史消息
+    this.interactionTimeWindow = 5000; // 5秒内有用户交互活动则不自动滚动
 
     // DOM elements
     this.elements = {
@@ -95,7 +117,7 @@ class UIManager {
       // 只保留非系统消息
       serverMsgs = serverMsgs.filter(m => m.user !== '系统');
       // 取本地消息中比服务器最早一条还早的部分
-  let localMsgs = (this.storage ? this.storage.loadMessages(room) : this.loadLocalMessages(room)) || [];
+      let localMsgs = (this.storage ? this.storage.loadMessages(room) : this.loadLocalMessages(room)) || [];
       if (serverMsgs.length > 0 && localMsgs.length > 0) {
         const minServerTs = Math.min(...serverMsgs.map(m => m.timestamp));
         // 只取比服务器最早一条还早的本地消息
@@ -141,7 +163,7 @@ class UIManager {
     this.elements.roomName.textContent = roomname;
     // 切换到新房间时，尝试从本地存储加载消息并渲染（若随后有 room:ready 会被覆盖为合并后的消息）
     try {
-  const local = (this.storage ? this.storage.loadMessages(this.currentRoom || 'nightcord-default') : this.loadLocalMessages(this.currentRoom || 'nightcord-default'));
+      const local = (this.storage ? this.storage.loadMessages(this.currentRoom || 'nightcord-default') : this.loadLocalMessages(this.currentRoom || 'nightcord-default'));
       // transform similar to room:ready: ensure fields for rendering
       this.messages = (Array.isArray(local) ? local : []).map(m => {
         const {user, text, timestamp} = m;
@@ -155,7 +177,7 @@ class UIManager {
           timestamp
         };
       });
-  this.lastMsgTimestamp = this.storage ? this.storage.getLastMsgTimestamp(this.currentRoom || 'nightcord-default') : this.getLastMsgTimestamp(this.currentRoom || 'nightcord-default');
+      this.lastMsgTimestamp = this.storage ? this.storage.getLastMsgTimestamp(this.currentRoom || 'nightcord-default') : this.getLastMsgTimestamp(this.currentRoom || 'nightcord-default');
       this.renderMessages();
     } catch (e) {
       // ignore
@@ -257,7 +279,26 @@ class UIManager {
     `;
       this.elements.chatlog.appendChild(msgDiv);
     });
-    this.elements.chatlog.scrollTop = this.elements.chatlog.scrollHeight;
+    
+    // 智能滚动逻辑
+    // 检查是否应该自动滚动到底部
+    const shouldAutoScroll = this.shouldAutoScrollToBottom();
+    if (shouldAutoScroll) {
+      this.elements.chatlog.scrollTop = this.elements.chatlog.scrollHeight;
+    }
+  }
+
+  /**
+   * 判断是否应该自动滚动到底部
+   * 条件：
+   * 1. 用户当前在底部附近 (距离底部 < scrollThreshold 像素)
+   * 2. 或者用户最近没有触摸/滚动操作（超过指定时间窗口）
+   * @returns {boolean}
+   */
+  shouldAutoScrollToBottom() {
+    const timeSinceLastTouch = Date.now() - this.lastUserActivityTime;
+    // 如果用户在底部附近，或者已经很久没有交互，就自动滚动
+    return this.isAtBottom || timeSinceLastTouch > this.interactionTimeWindow;
   }
 
   /**
@@ -268,9 +309,27 @@ class UIManager {
   setupChatRoom(onSendMessage, onSetUser) {
     const { chatInput, chatlog } = this.elements;
 
-    if(onSetUser) {
+    if (onSetUser) {
       this.onSetUser = onSetUser;
     }
+
+    // 监听滚动事件，检测用户是否接近底部
+    chatlog.addEventListener("scroll", UIManager.throttle(() => {
+      const distanceFromBottom = chatlog.scrollHeight - chatlog.scrollTop - chatlog.clientHeight;
+      // 如果距离底部小于阈值，认为用户在底部附近
+      this.isAtBottom = distanceFromBottom < this.scrollThreshold;
+      this.updateUserActivityTime();
+    }, 100).bind(this));
+
+    // 监听触摸事件（移动端）
+    chatlog.addEventListener("touchmove", UIManager.throttle(() => {
+      this.updateUserActivityTime();
+    }, 100).bind(this));
+
+    // 监听鼠标滚轮事件（桌面端）
+    chatlog.addEventListener("wheel", UIManager.throttle(() => {
+      this.updateUserActivityTime();
+    }, 100).bind(this));
 
     // Submit message
     chatInput.addEventListener("keydown", (event) => {
@@ -280,6 +339,10 @@ class UIManager {
           if (pangu) {
             message = pangu.spacingText(message);
           }
+          // 用户主动发送消息，重置交互时间并标记在底部
+          // 发送消息后标记在底部，确保下次渲染会自动滚动
+          this.isAtBottom = true;
+          this.updateUserActivityTime();
           onSendMessage(message);
         }
       }
@@ -300,6 +363,13 @@ class UIManager {
     });
 
     chatInput.focus();
+  }
+
+  /**
+   * 更新用户活动时间
+   */
+  updateUserActivityTime() {
+    this.lastUserActivityTime = Date.now();
   }
 
   /**
