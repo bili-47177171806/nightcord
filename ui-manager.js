@@ -471,6 +471,9 @@ class UIManager {
           if (pangu) {
             message = pangu.spacingText(message);
           }
+          // Normalize stamp emoji format: replace [stamp_0806] with [stamp0806] to unify sticker rendering
+          // 规范化 stamp 表情格式：将 [stamp_0806] 替换为 [stamp0806]，以统一处理 sticker 渲染
+          message = message.replace(/\[stamp_(\d+)\]/g, (_, p1) => `[stamp${p1}]`);
           // 用户主动发送消息，重置交互时间并标记在底部
           // 发送消息后标记在底部，确保下次渲染会自动滚动
           this.isAtBottom = true;
