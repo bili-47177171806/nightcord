@@ -18,6 +18,7 @@
 class UIManager {
   static MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
   static TWELVE_HOURS_MS = UIManager.MILLISECONDS_PER_DAY / 2;
+  static STICKER_WIDTH_THRESHOLD = 180;
 
   /**
    * 简单节流函数，确保处理器每 wait 毫秒最多执行一次
@@ -248,31 +249,84 @@ class UIManager {
    * @returns {string} 安全的 html 片段
    */
   renderTextWithStickers(text) {
-    if (!text) return '';
-    const parts = [];
-    let lastIndex = 0;
+    // 返回 DocumentFragment，包含文本节点、<br> 和 <img> 节点（带事件监听器）
+    const frag = document.createDocumentFragment();
+    if (!text) return frag;
+
+    // 只有消息完全等于一个 sticker（前后可有空白）时才视为 fixed
+    const isSingleSticker = /^\s*\[[^\]]+\]\s*$/.test(text);
     const re = /\[([^\]]+)\]/g; // 匹配 [内容]
+    let lastIndex = 0;
+
+    const appendTextWithLineBreaks = (str) => {
+      if (!str) return;
+      const parts = str.split('\n');
+      parts.forEach((p, i) => {
+        if (p.length > 0) frag.appendChild(document.createTextNode(p));
+        if (i < parts.length - 1) frag.appendChild(document.createElement('br'));
+      });
+    };
+
     let m;
     while ((m = re.exec(text)) !== null) {
       const idx = m.index;
       const matched = m[0];
       const name = m[1];
-      // 添加前面的普通文本（转义）
+      // 添加前面的普通文本（作为文本节点，避免 XSS）
       if (idx > lastIndex) {
-        parts.push(this.escapeHtml(text.slice(lastIndex, idx)));
+        appendTextWithLineBreaks(text.slice(lastIndex, idx));
       }
+
       const key = String(name).toLowerCase();
       const fileName = key.includes('_') ? key.replace('_', '/') : key;
       const src = `${this.stickerDir}/${encodeURIComponent(fileName)}.png`;
-      parts.push(`<img class="sticker" src="${this.escapeHtml(src)}" alt="[${this.escapeHtml(name)}]" title="${this.escapeHtml(name)}" style="height:120px;vertical-align:middle;display:inline-block;" onerror="this.removeAttribute('style'); this.onerror=null;" />`);
+
+      const img = document.createElement('img');
+      img.classList.add('sticker', 'sticker-loading');
+      if (isSingleSticker) img.classList.add('sticker-fixed'); else img.classList.add('sticker-inline');
+      img.src = src;
+      img.alt = `[${name}]`;
+      img.title = name;
+      img.loading = 'lazy';
+
+      // 加载完成：移除占位；若渲染后宽度超过阈值则切换到 narrow
+      const onLoad = () => {
+        img.classList.remove('sticker-loading');
+        try {
+          if (img.width > UIManager.STICKER_WIDTH_THRESHOLD) {
+            img.classList.remove('sticker-fixed');
+            img.classList.add('sticker-narrow');
+          }
+        } catch (e) {}
+        img.removeEventListener('load', onLoad);
+      };
+      img.addEventListener('load', onLoad, { once: true });
+
+      const onError = () => {
+        // 替换为原始文本（例如 [name]），避免显示浏览器的 broken image 图标
+        const replacement = document.createElement('span');
+        replacement.className = 'sticker-broken';
+        replacement.textContent = img.alt || '';
+        try { img.replaceWith(replacement); } catch (e) {
+          // fallback: hide the image
+          img.style.display = 'none';
+        }
+        // 清理事件与 src
+        try { img.src = ''; } catch (e) {}
+        img.removeEventListener('error', onError);
+      };
+      img.addEventListener('error', onError, { once: true });
+
+      frag.appendChild(img);
       lastIndex = idx + matched.length;
     }
+
     // 剩余文本
     if (lastIndex < text.length) {
-      parts.push(this.escapeHtml(text.slice(lastIndex)));
+      appendTextWithLineBreaks(text.slice(lastIndex));
     }
-    // 将换行替换为 <br>
-    return parts.join('').replace(/\n/g, '<br>');
+
+    return frag;
   }
 
   /**
@@ -321,16 +375,40 @@ class UIManager {
     this.messages.forEach(msg => {
       const msgDiv = document.createElement('div');
       msgDiv.className = 'message';
-      msgDiv.innerHTML = `
-      <span class="avatar ${msg.color}">${msg.avatar}</span>
-      <div class="message-content">
-        <div class="message-header">
-          <span class="message-user">${msg.user}</span>
-          <span class="message-time">${msg.time}</span>
-        </div>
-  ${msg.text ? `<p class="message-text">${this.renderTextWithStickers(msg.text)}</p>` : ''}
-      </div>
-    `;
+
+      // Avatar
+      const avatarSpan = document.createElement('span');
+      avatarSpan.className = `avatar ${msg.color}`;
+      avatarSpan.innerHTML = msg.avatar;
+
+      // Content
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'message-content';
+
+      // Header
+      const headerDiv = document.createElement('div');
+      headerDiv.className = 'message-header';
+      const userSpan = document.createElement('span');
+      userSpan.className = 'message-user';
+      userSpan.textContent = msg.user;
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'message-time';
+      timeSpan.textContent = msg.time;
+      headerDiv.appendChild(userSpan);
+      headerDiv.appendChild(timeSpan);
+      contentDiv.appendChild(headerDiv);
+
+      // Message text (may contain stickers) — renderTextWithStickers 返回 DocumentFragment
+      if (msg.text) {
+        const p = document.createElement('p');
+        p.className = 'message-text';
+        const frag = this.renderTextWithStickers(msg.text);
+        p.appendChild(frag);
+        contentDiv.appendChild(p);
+      }
+
+      msgDiv.appendChild(avatarSpan);
+      msgDiv.appendChild(contentDiv);
       this.elements.chatlog.appendChild(msgDiv);
     });
 

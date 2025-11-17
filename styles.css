@@ -1,3 +1,7 @@
+:root {
+  --sticker-size: 120px;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", "Noto Sans JP", sans-serif;
@@ -285,4 +289,47 @@ body {
   scrollbar-width: thin;
   border-radius: 10px;
   scrollbar-color: rgb(53, 36, 78) rgb(70, 52, 92);
+}
+
+.sticker {
+  vertical-align: middle;
+  display: inline-block;
+  max-width: 100%; /* 防止超出容器 */
+}
+.sticker-fixed {
+  height: var(--sticker-size);
+  width: auto;
+}
+
+.sticker-narrow {
+  width: var(--sticker-size);
+  height: auto;
+}
+
+.sticker-inline {
+  height: 60px;
+  width: auto;
+}
+
+/* 加载占位：在图片加载前显示正方形占位，尺寸与将要显示的贴纸大小匹配 */
+.sticker-loading {
+  background: #3d3750; /* 占位背景色 */
+  display: inline-block;
+  vertical-align: middle;
+  width: var(--sticker-size);
+  height: var(--sticker-size);
+}
+
+/* 对于 inline 情况，使用更小的正方形占位 */
+.sticker-inline.sticker-loading {
+  width: 60px;
+  height: 60px;
+}
+
+/* 加载失败时显示的替代文本样式 */
+.sticker-broken {
+  color: #bdbdbd;
+  font-style: italic;
+  display: inline-block;
+  padding: 0 6px;
 }
