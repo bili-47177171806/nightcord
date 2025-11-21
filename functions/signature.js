@@ -4,21 +4,15 @@
 // A very small subset of features to generate OSS4-HMAC-SHA256 presigned URLs.
 
 let subtle = null;
-let nodeCrypto = null;
-try {
-  if (crypto && crypto.subtle) {
-    subtle = crypto.subtle;
-  } else if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
-    subtle = globalThis.crypto.subtle;
-  } else {
-    nodeCrypto = require('crypto');
-    if (nodeCrypto && nodeCrypto.webcrypto && nodeCrypto.webcrypto.subtle) subtle = nodeCrypto.webcrypto.subtle;
-  }
-} catch (e) {
-  // ignore
+if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
+  subtle = globalThis.crypto.subtle;
+} else if (typeof crypto !== 'undefined' && crypto && crypto.subtle) {
+  subtle = crypto.subtle;
+} else if (typeof self !== 'undefined' && self.crypto && self.crypto.subtle) {
+  subtle = self.crypto.subtle;
 }
 
-const textEncoder = new (TextEncoder || globalThis.TextEncoder || require('util').TextEncoder)();
+const textEncoder = new TextEncoder();
 
 function toUint8(data) {
   if (data instanceof Uint8Array) return data;
@@ -37,30 +31,20 @@ function bufToHex(buf) {
 }
 
 async function sha256HexAsync(str) {
-  if (subtle) {
-    const data = toUint8(str);
-    const digest = await subtle.digest('SHA-256', data);
-    return bufToHex(digest);
-  }
-  // fallback to node crypto
-  if (!nodeCrypto) nodeCrypto = require('crypto');
-  return nodeCrypto.createHash('sha256').update(String(str)).digest('hex');
+  if (!subtle) throw new Error('Web Crypto API (crypto.subtle) is required for sha256 hashing in this environment');
+  const data = toUint8(str);
+  const digest = await subtle.digest('SHA-256', data);
+  return bufToHex(digest);
 }
 
 async function hmacSha256Async(keyBytes, data) {
   // keyBytes: Uint8Array or ArrayBuffer
   // data: string or Uint8Array
-  if (subtle) {
-    const keyUint8 = toUint8(keyBytes);
-    const importedKey = await subtle.importKey('raw', keyUint8, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const sig = await subtle.sign('HMAC', importedKey, toUint8(data));
-    return new Uint8Array(sig);
-  }
-  // fallback to node crypto HMAC
-  if (!nodeCrypto) nodeCrypto = require('crypto');
-  const h = nodeCrypto.createHmac('sha256', Buffer.from(keyBytes));
-  h.update(typeof data === 'string' ? data : Buffer.from(data));
-  return new Uint8Array(h.digest());
+  if (!subtle) throw new Error('Web Crypto API (crypto.subtle) is required for HMAC-SHA256 in this environment');
+  const keyUint8 = toUint8(keyBytes);
+  const importedKey = await subtle.importKey('raw', keyUint8, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await subtle.sign('HMAC', importedKey, toUint8(data));
+  return new Uint8Array(sig);
 }
 
 function encodeString(str) {
